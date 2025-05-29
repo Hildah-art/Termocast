@@ -4,9 +4,12 @@ verify_ssl = true
 name = "pypi"
 
 [packages]
-ipdb = "*"
 sqlalchemy = "*"
 alembic = "*"
+click = "*"
+python-dotenv = "*"
+tabulate = "*"
+requests = "*"
 
 [dev-packages]
 
