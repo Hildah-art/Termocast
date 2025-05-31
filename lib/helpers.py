@@ -1,59 +1,36 @@
 import requests
-from lib.db.models import Location, CurrentWeather, Forecast
-from lib.db.base import get_db
-from datetime import datetime, timedelta
+from sqlalchemy.orm import Session
+from db.models import WeatherRecord
 
-class WeatherAPI:
-    def _init_(self, api_key):
-        self.api_key = api_key
-        self.base_url = "http://api.weatherapi.com/v1"
-    
-    def fetch_current(self, location):
-        url = f"{self.base_url}/current.json?key={self.api_key}&q={location.latitude},{location.longitude}"
-        response = requests.get(url)
-        data = response.json()
-        
-        db = next(get_db())
-        
-        # Update current weather
-        current = db.query(CurrentWeather).filter(CurrentWeather.location_id == location.id).first()
-        if not current:
-            current = CurrentWeather(location_id=location.id)
-            db.add(current)
-        
-        current_data = data['current']
-        current.temp_c = current_data['temp_c']
-        current.temp_f = current_data['temp_f']
-        current.condition_text = current_data['condition']['text']
-        current.wind_kph = current_data['wind_kph']
-        current.wind_dir = current_data['wind_dir']
-        current.humidity = current_data['humidity']
-        current.feelslike_c = current_data['feelslike_c']
-        current.timestamp = datetime.now()
-        
-        db.commit()
-    
-    def fetch_forecast(self, location, days=3):
-        url = f"{self.base_url}/forecast.json?key={self.api_key}&q={location.latitude},{location.longitude}&days={days}"
-        response = requests.get(url)
-        data = response.json()
-        
-        db = next(get_db())
-        
-        # Clear old forecasts
-        db.query(Forecast).filter(Forecast.location_id == location.id).delete()
-        
-        # Add new forecasts
-        for day in data['forecast']['forecastday']:
-            daily = Forecast(
-                location_id=location.id,
-                forecast_date=datetime.strptime(day['date'], '%Y-%m-%d').date(),
-                is_daily=True,
-                maxtemp_c=day['day']['maxtemp_c'],
-                mintemp_c=day['day']['mintemp_c'],
-                chance_of_rain=day['day']['daily_chance_of_rain'],
-                condition_text=day['day']['condition']['text']
-            )
-            db.add(daily)
-        
-        db.commit()
+# Configuration
+WEATHER_API_KEY = c7bc5bc56cf424afcb473fceb611cbe1
+WEATHER_BASE_URL = "http://api.openweathermap.org/data/2.5/weather"
+
+def fetch_weather(city: str) -> dict:
+    """Fetch live weather data from API"""
+    try:
+        params = {
+            "q": city,
+            "appid": WEATHER_API_KEY,
+            "units": "metric"
+        }
+        response = requests.get(WEATHER_BASE_URL, params=params, timeout=10)
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        raise RuntimeError(f"Weather API error: {str(e)}")
+
+def save_weather_to_db(session: Session, city: str, data: dict) -> WeatherRecord:
+    """Save weather data to database"""
+    record = WeatherRecord(
+        city=city,
+        temperature=data['main']['temp'],
+        feels_like=data['main']['feels_like'],
+        conditions=data['weather'][0]['description'],
+        humidity=data['main']['humidity'],
+        wind_speed=data['wind']['speed'],
+        pressure=data['main']['pressure']
+    )
+    session.add(record)
+    session.commit()
+    return record
